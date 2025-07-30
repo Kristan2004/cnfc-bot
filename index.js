@@ -1,7 +1,20 @@
 require("dotenv").config();
+// ✅ Load Google credentials from secret file (Render secret file path or local)
+let googleCreds;
+try {
+  const credsPath = process.env.GOOGLE_CREDS_PATH || './creds.json';
+  const rawData = fs.readFileSync(credsPath, 'utf8');
+  googleCreds = JSON.parse(rawData);
+} catch (err) {
+  console.error("❌ Failed to read Google credentials:", err.message);
+  process.exit(1);
+}
+const { google } = require('googleapis');
 const { Telegraf, Markup } = require("telegraf");
 const { GoogleSpreadsheet } = require("google-spreadsheet");
-const creds = require("./creds.json");
+const fs = require('fs');
+// Path where Render mounts your secret file
+const creds = JSON.parse(fs.readFileSync(process.env.GOOGLE_CREDS_PATH, 'utf8'));
 const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000;
@@ -74,7 +87,7 @@ bot.start(async (ctx) => {
   const username = ctx.from.username || "";
   const refCode = ctx.startPayload || "";
 
-  await doc.useServiceAccountAuth(creds);
+  await doc.useServiceAccountAuth(googleCreds);
   await doc.loadInfo();
   const sheet = doc.sheetsByTitle["ChainFabric Bot Users"];
   await sheet.loadHeaderRow();
@@ -118,7 +131,7 @@ bot.start(async (ctx) => {
 
 bot.action("verify_telegram", async (ctx) => {
   const telegramId = ctx.from.id;
-  await doc.useServiceAccountAuth(creds);
+  await doc.useServiceAccountAuth(googleCreds);
   await doc.loadInfo();
   const sheet = doc.sheetsByTitle["ChainFabric Bot Users"];
   const row = await getUserRow(sheet, telegramId);
@@ -137,7 +150,7 @@ bot.on("text", async (ctx) => {
   const telegramId = ctx.from.id;
   const text = ctx.message.text;
 
-  await doc.useServiceAccountAuth(creds);
+  await doc.useServiceAccountAuth(googleCreds);
   await doc.loadInfo();
   const sheet = doc.sheetsByTitle["ChainFabric Bot Users"];
   const row = await getUserRow(sheet, telegramId);
@@ -155,7 +168,7 @@ bot.on("text", async (ctx) => {
 // ✅ Handle YouTube screenshot verification
 bot.on("photo", async (ctx) => {
   const telegramId = ctx.from.id;
-  await doc.useServiceAccountAuth(creds);
+  await doc.useServiceAccountAuth(googleCreds);
   await doc.loadInfo();
   const sheet = doc.sheetsByTitle["ChainFabric Bot Users"];
   const row = await getUserRow(sheet, telegramId);
@@ -193,7 +206,7 @@ bot.on("photo", async (ctx) => {
 // ✅ Refresh Profile Button
 bot.action("refresh_profile", async (ctx) => {
   const telegramId = ctx.from.id;
-  await doc.useServiceAccountAuth(creds);
+  await doc.useServiceAccountAuth(googleCreds);
   await doc.loadInfo();
   const sheet = doc.sheetsByTitle["ChainFabric Bot Users"];
   const row = await getUserRow(sheet, telegramId);
