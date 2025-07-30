@@ -2,7 +2,18 @@ require("dotenv").config();
 const { Telegraf, Markup } = require("telegraf");
 const { GoogleSpreadsheet } = require("google-spreadsheet");
 const creds = require("./creds.json");
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
 
+// Dummy route so Render sees the server
+app.get('/', (req, res) => {
+  res.send('CNFC Telegram Bot is running.');
+});
+
+app.listen(port, () => {
+  console.log(`Web server listening on port ${port}`);
+});
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID);
 
