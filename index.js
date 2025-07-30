@@ -65,7 +65,7 @@ async function sendTask(ctx, row) {
     ]));
   } else if (task === "youtube_done") {
     await ctx.reply("✅ YouTube subscription verified.\n\n+500 CNFC Points");
-    const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.ReferralCode}`;
+    const refLink = `https://t.me/chainfabricbot?start=${row.ReferralCode}`;
     const balance = row.Balance || 0;
     const referrals = row.Referrals || 0;
 
@@ -185,7 +185,7 @@ bot.on("photo", async (ctx) => {
     await ctx.reply("✅ YouTube subscription verified.\n\n+500 CNFC Points");
     await ctx.reply("🎉 Thanks for joining ChainFabric!\n\nYou can earn minumum 2000 CNFC points and No limit of maximum CNFC points you can earn. \n📬 Copy your referral link and share it to earn +1000 CNFC Points per signup (no limit)!. \n🗓️ You will receive the all points you earn on ChainFabric when we launch on 16th August 2025 to claim your rewards.");
 
-    const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.ReferralCode}`;
+    const refLink = `https://t.me/chainfabricbot?start=${row.ReferralCode}`;
     const balance = row.Balance || 0;
     const referrals = row.Referrals || 0;
 
@@ -215,7 +215,7 @@ bot.action("refresh_profile", async (ctx) => {
 
   if (!row) return ctx.reply("❌ You need to /start first.");
 
-  const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.ReferralCode}`;
+  const refLink = `https://t.me/chainfabricbot?start=${row.ReferralCode}`;
   const balance = row.Balance || 0;
   const referrals = row.Referrals || 0;
 
