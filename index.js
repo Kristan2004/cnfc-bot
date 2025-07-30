@@ -1,4 +1,5 @@
 require("dotenv").config();
+const fs = require('fs');
 // ✅ Load Google credentials from secret file (Render secret file path or local)
 let googleCreds;
 try {
@@ -12,7 +13,7 @@ try {
 const { google } = require('googleapis');
 const { Telegraf, Markup } = require("telegraf");
 const { GoogleSpreadsheet } = require("google-spreadsheet");
-const fs = require('fs');
+
 // Path where Render mounts your secret file
 const creds = JSON.parse(fs.readFileSync(process.env.GOOGLE_CREDS_PATH, 'utf8'));
 const express = require('express');
