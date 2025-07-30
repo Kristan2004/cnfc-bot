@@ -65,7 +65,7 @@ async function sendTask(ctx, row) {
     ]));
   } else if (task === "youtube_done") {
     await ctx.reply("✅ YouTube subscription verified.\n\n+500 CNFC Points");
-    const refLink = `https://t.me/chainfabricbot?start=${row.ReferralCode}`;
+    const refLink = `https://t.me/chainfabric_bot?start=${row.ReferralCode}`;
     const balance = row.Balance || 0;
     const referrals = row.Referrals || 0;
 
