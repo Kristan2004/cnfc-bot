@@ -33,7 +33,7 @@ const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID);
 
 const CHANNEL_USERNAME = "chainfabric_official";
 const CHANNEL_USERNAME2 = "chainfabricnews";
-const INSTAGRAM_URL = "https://instagram.com/chainfabric.official";
+const INSTAGRAM_URL = "https://instagram.com/chainfabric";
 const YOUTUBE_URL = "https://youtube.com/@chainfabric";
 
 const generateReferralCode = (count) => "USER" + String(count + 1).padStart(3, "0");
