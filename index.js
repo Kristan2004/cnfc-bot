@@ -38,7 +38,6 @@ const AD_URL = "https://otieu.com/4/9649985";
 // --- 5. Helper Functions ---
 const generateReferralCode = (count) => "USER" + String(count + 1).padStart(3, "0");
 
-// ✅ New function to generate article session codes
 function generateSessionCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const nums = '0123456789';
@@ -83,7 +82,6 @@ async function sendTask(ctx, row) {
         `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`,
         {
           parse_mode: "HTML",
-          // ✅ UPDATED BUTTONS
           reply_markup: Markup.inlineKeyboard([
             [Markup.button.callback("🔄 Refresh", "refresh_profile")],
             [Markup.button.callback("Watch Ad (+30 Points)", "watch_ad")],
@@ -161,17 +159,16 @@ bot.on("text", async (ctx) => {
     if (ctx.message.text.startsWith('/')) return;
     try {
         const telegramId = ctx.from.id;
-        const text = ctx.message.text.trim(); // Use trim() to remove leading/trailing spaces
+        const text = ctx.message.text.trim();
         await doc.useServiceAccountAuth(googleCreds);
         await doc.loadInfo();
         const sheet = doc.sheetsByTitle["ChainFabric Bot Users"];
         const row = await getUserRow(sheet, telegramId);
         if (!row) return ctx.reply("❌ You need to /start first.");
         
-        // ✅ ADDED: Logic to check for the article session ID
         if (row.ArticleSessionID && row.ArticleSessionID === text) {
             row.Balance = parseInt(row.Balance || 0) + 100;
-            row.ArticleSessionID = ''; // Clear the code so it can't be reused
+            row.ArticleSessionID = '';
             await row.save();
             await ctx.reply("✅ Success! You've earned +100 CNFC Points. Click Refresh to see your updated balance.");
         } else if (row.TaskStatus === "telegram_done") {
@@ -229,7 +226,6 @@ bot.action("refresh_profile", async (ctx) => {
             `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`,
             {
                 parse_mode: "HTML",
-                // ✅ UPDATED BUTTONS
                 reply_markup: Markup.inlineKeyboard([
                     [Markup.button.callback("🔄 Refresh", "refresh_profile")],
                     [Markup.button.callback("Watch Ad (+30 Points)", "watch_ad")],
@@ -246,7 +242,6 @@ bot.action("refresh_profile", async (ctx) => {
     }
 });
 
-// ✅ ADDED NEW HANDLERS FOR THE NEW TASKS
 const userAdCooldown = new Set();
 bot.action("watch_ad", async (ctx) => {
     if (userAdCooldown.has(ctx.from.id)) {
@@ -285,7 +280,7 @@ bot.action('claim_ad_reward', async (ctx) => {
             userAdCooldown.add(telegramId);
             setTimeout(() => {
                 userAdCooldown.delete(telegramId);
-            }, 60000); // 60-second cooldown
+            }, 60000);
 
             await ctx.editMessageText("✅ Thanks for watching! You've earned +30 CNFC Points. Click Refresh to see your updated balance.");
             await ctx.answerCbQuery("Reward claimed!");
@@ -301,21 +296,17 @@ bot.action('claim_ad_reward', async (ctx) => {
 bot.action("read_article", async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.reply("⏳ Processing... generating your unique session code.");
-
     try {
         const telegramId = ctx.from.id;
         await doc.useServiceAccountAuth(googleCreds);
         await doc.loadInfo();
         const sheet = doc.sheetsByTitle["ChainFabric Bot Users"];
         const row = await getUserRow(sheet, telegramId);
-
         if (row) {
             const sessionCode = generateSessionCode();
-            row.ArticleSessionID = sessionCode; // This is why you need the new column
+            row.ArticleSessionID = sessionCode;
             await row.save();
-
             const articleLink = `${ARTICLE_URL}?session=${sessionCode}`;
-
             await ctx.replyWithHTML(
                 `<b>Here are your steps:</b>\n\n` +
                 `1. Click the button below to open an article with your unique session ID.\n` +
