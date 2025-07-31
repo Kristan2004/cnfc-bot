@@ -65,16 +65,16 @@ async function sendTask(ctx, row) {
     ]));
   } else if (task === "youtube_done") {
     await ctx.reply("✅ YouTube subscription verified.\n\n+500 CNFC Points");
-    const escapedUsername = ctx.botInfo.username.replace(/_/g, '\\_');
-    const refLink = `https://t.me/${escapedUsername}?start=${row.ReferralCode}`;
+    const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.ReferralCode}`;
     const balance = row.Balance || 0;
     const referrals = row.Referrals || 0;
 
     await ctx.reply(
-      `🎉 All tasks completed!\n\n👤 *Your Profile*\n\n💰 Balance: *${balance} CNFC*\n👥 Referrals: *${referrals}*\n🔗 Referral Link:\n${refLink}`,
+      `🎉 All tasks completed!\n\n👤 *Your Profile*\n\n💰 Balance: *${balance} CNFC*\n👥 Referrals: *${referrals}*`,
       {
         parse_mode: "Markdown",
         reply_markup: Markup.inlineKeyboard([
+          [Markup.button.url("🔗 Share Referral Link", refLink)],
           [Markup.button.callback("🔄 Refresh", "refresh_profile")],
           [Markup.button.callback("🆕 New Task", "new_task")]
         ])
@@ -186,18 +186,18 @@ bot.on("photo", async (ctx) => {
     await ctx.reply("✅ YouTube subscription verified.\n\n+500 CNFC Points");
     await ctx.reply("🎉 Thanks for joining ChainFabric!\n\nYou can earn minumum 2000 CNFC points and No limit of maximum CNFC points you can earn. \n📬 Copy your referral link and share it to earn +1000 CNFC Points per signup (no limit)!. \n🗓️ You will receive the all points you earn on ChainFabric when we launch on 16th August 2025 to claim your rewards.");
 
-    const escapedUsername = ctx.botInfo.username.replace(/_/g, '\\_');
-    const refLink = `https://t.me/${escapedUsername}?start=${row.ReferralCode}`;
+    const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.ReferralCode}`;
     const balance = row.Balance || 0;
     const referrals = row.Referrals || 0;
 
     await ctx.telegram.sendMessage(
       ctx.chat.id,
-      `🎉 All tasks completed!\n\n👤 *Your Profile*\n\n💰 Balance: *${balance} CNFC*\n👥 Referrals: *${referrals}*\n🔗 Referral Link:\n${refLink}`,
+      `🎉 All tasks completed!\n\n👤 *Your Profile*\n\n💰 Balance: *${balance} CNFC*\n👥 Referrals: *${referrals}*`,
       {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
+            [Markup.button.url("🔗 Share Referral Link", refLink)],
             [Markup.button.callback("🔄 Refresh", "refresh_profile")],
             [Markup.button.callback("🆕 New Task", "new_task")]
           ]
@@ -217,17 +217,17 @@ bot.action("refresh_profile", async (ctx) => {
 
   if (!row) return ctx.reply("❌ You need to /start first.");
 
-  const escapedUsername = ctx.botInfo.username.replace(/_/g, '\\_');
-  const refLink = `https://t.me/${escapedUsername}?start=${row.ReferralCode}`;
+  const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.ReferralCode}`;
   const balance = row.Balance || 0;
   const referrals = row.Referrals || 0;
 
   await ctx.editMessageText(
-    `👤 *Your Profile*\n\n💰 Balance: *${balance} CNFC*\n👥 Referrals: *${referrals}*\n🔗 Referral Link:\n${refLink}`,
+    `👤 *Your Profile*\n\n💰 Balance: *${balance} CNFC*\n👥 Referrals: *${referrals}*`,
     {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
+          [Markup.button.url("🔗 Share Referral Link", refLink)],
           [Markup.button.callback("🔄 Refresh", "refresh_profile")],
           [Markup.button.callback("🆕 New Task", "new_task")]
         ]
