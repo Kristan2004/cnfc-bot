@@ -1,26 +1,25 @@
 require("dotenv").config();
 const fs = require('fs');
-// ✅ Load Google credentials from secret file (Render secret file path or local)
+
 let googleCreds;
 try {
   const credsPath = process.env.GOOGLE_CREDS_PATH || './creds.json';
   const rawData = fs.readFileSync(credsPath, 'utf8');
   googleCreds = JSON.parse(rawData);
+  console.log(`✅ Successfully loaded credentials for project: ${googleCreds.project_id}`);
 } catch (err) {
-  console.error("❌ Failed to read Google credentials:", err.message);
+  console.error("❌ Failed to read or parse Google credentials:", err.message);
   process.exit(1);
 }
+
 const { google } = require('googleapis');
 const { Telegraf, Markup } = require("telegraf");
 const { GoogleSpreadsheet } = require("google-spreadsheet");
-
-// Path where Render mounts your secret file
-const creds = JSON.parse(fs.readFileSync(process.env.GOOGLE_CREDS_PATH, 'utf8'));
 const express = require('express');
+
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Dummy route so Render sees the server
 app.get('/', (req, res) => {
   res.send('CNFC Telegram Bot is running.');
 });
@@ -28,6 +27,7 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`Web server listening on port ${port}`);
 });
+
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID);
 
@@ -64,7 +64,6 @@ async function sendTask(ctx, row) {
       Markup.button.url("Subscribe YouTube", YOUTUBE_URL)
     ]));
   } else if (task === "youtube_done") {
-    await ctx.reply("✅ YouTube subscription verified.\n\n+500 CNFC Points");
     const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.ReferralCode}`;
     const balance = row.Balance || 0;
     const referrals = row.Referrals || 0;
@@ -192,7 +191,7 @@ bot.on("photo", async (ctx) => {
 
     await ctx.telegram.sendMessage(
       ctx.chat.id,
-      `🎉 All tasks completed!\n\n👤 *Your Profile*\n\n💰 Balance: *${balance} CNFC*\n👥 Referrals: *${referrals}*`,
+      `👤 *Your Profile*\n\n💰 Balance: *${balance} CNFC*\n👥 Referrals: *${referrals}*`,
       {
         parse_mode: "Markdown",
         reply_markup: {
@@ -227,6 +226,7 @@ bot.action("refresh_profile", async (ctx) => {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
+          // ✅ THIS IS THE FINAL FIX
           [Markup.button.url("🔗 Share Referral Link", refLink)],
           [Markup.button.callback("🔄 Refresh", "refresh_profile")],
           [Markup.button.callback("🆕 New Task", "new_task")]
@@ -240,7 +240,5 @@ bot.action("refresh_profile", async (ctx) => {
 bot.action("new_task", async (ctx) => {
   await ctx.reply("🛠 New task functionality coming soon...");
 });
+
 bot.launch();
-
-
-
