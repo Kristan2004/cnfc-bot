@@ -28,8 +28,7 @@ const serviceAccountAuth = new JWT({
 const app = express();
 const port = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('CNFC Telegram Bot is running.'));
-app.listen(port, () => console.log(`✅✅✅ BOT VERSION 2 IS RUNNING ON PORT ${port} ✅✅✅`));
-
+app.listen(port, () => console.log(`✅ Web server listening on port ${port}`));
 
 // --- 4. Bot and Google Sheet Initialization ---
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -65,7 +64,6 @@ async function getUserRow(sheet, telegramId) {
   return rows.find((row) => row.get('TelegramID') === String(telegramId));
 }
 
-// ✅ Centralized function to build the profile keyboard markup.
 function buildProfileMarkup() {
     const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback("🔄 Refresh", "refresh_profile")],
@@ -95,21 +93,22 @@ async function sendTask(ctx, row) {
       await ctx.reply("✅ Instagram Username Saved!\n\n+500 CNFC Points");
       await ctx.reply("▶️ Subscribe our YouTube and send screenshot proof:", Markup.inlineKeyboard([Markup.button.url("Subscribe YouTube", YOUTUBE_URL)]));
     } else if (task === "youtube_done") {
-      await sendProfile(ctx, row); // Use the dedicated profile function
+      const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.get('ReferralCode')}`;
+      const balance = row.get('Balance') || 0;
+      const referrals = row.get('Referrals') || 0;
+      const profileText = `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`;
+      await ctx.replyWithHTML(profileText, buildProfileMarkup());
     }
   } catch (err) {
     console.error(`❌ ERROR in sendTask for task "${task}":`, err);
   }
 }
 
-// ✅ This function now correctly sends the profile message with buttons
 async function sendProfile(ctx, row) {
     const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.get('ReferralCode')}`;
     const balance = row.get('Balance') || 0;
     const referrals = row.get('Referrals') || 0;
     const profileText = `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`;
-    
-    // Use replyWithHTML for new messages, which is a shortcut for the options object
     await ctx.replyWithHTML(profileText, buildProfileMarkup());
 }
 
@@ -120,11 +119,9 @@ bot.start(async (ctx) => {
         const name = ctx.from.first_name || "";
         const username = ctx.from.username || "";
         const refCode = ctx.startPayload || "";
-
         await doc.loadInfo();
         const sheet = doc.sheetsByTitle[SHEET_TITLE];
         if (!sheet) throw new Error(`Sheet with title "${SHEET_TITLE}" was not found.`);
-        
         let userRow = await getUserRow(sheet, telegramId);
         if (!userRow) {
             const rows = await sheet.getRows();
@@ -267,8 +264,6 @@ bot.action("refresh_profile", async (ctx) => {
         const balance = row.get('Balance') || 0;
         const referrals = row.get('Referrals') || 0;
         const profileText = `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`;
-        
-        // ✅ FIXED: Use spread syntax (...) on the markup object when editing.
         await ctx.editMessageText(profileText, {
             parse_mode: "HTML",
             ...buildProfileMarkup()
@@ -284,15 +279,83 @@ bot.action("refresh_profile", async (ctx) => {
 
 const userAdCooldown = new Set();
 bot.action("watch_ad", async (ctx) => {
-    // ... (This function is fine)
+    if (userAdCooldown.has(ctx.from.id)) {
+        return ctx.answerCbQuery("Please wait at least 1 minute before watching another ad.", { show_alert: true });
+    }
+    await ctx.answerCbQuery();
+    await ctx.reply(
+        "⚠️ <b>Disclaimer & Warning</b> ⚠️\nWe are not responsible for the content of the ads shown. Do not click on, download, or install anything from the ads. Proceed at your own risk.",
+        { parse_mode: "HTML" }
+    );
+    await ctx.reply(
+        "Please watch the ad for at least 1 minute to receive your reward.",
+        Markup.inlineKeyboard([
+            [Markup.button.url("📺 Watch Ad", AD_URL)],
+            [Markup.button.callback("✅ I Watched the Ad", "claim_ad_reward")]
+        ])
+    );
 });
 
 bot.action('claim_ad_reward', async (ctx) => {
-    // ... (This function is fine)
+    const telegramId = ctx.from.id;
+    if (userAdCooldown.has(telegramId)) {
+        return ctx.answerCbQuery("You have already claimed this reward recently. Please wait.", { show_alert: true });
+    }
+    
+    try {
+        await doc.loadInfo();
+        const sheet = doc.sheetsByTitle[SHEET_TITLE];
+        if (!sheet) throw new Error(`Sheet '${SHEET_TITLE}' not found.`);
+        const row = await getUserRow(sheet, telegramId);
+        if (row) {
+            row.set('Balance', parseInt(row.get('Balance') || 0) + 30);
+            await row.save();
+            userAdCooldown.add(telegramId);
+            setTimeout(() => {
+                userAdCooldown.delete(telegramId);
+            }, 60000);
+            await ctx.editMessageText("✅ Thanks for watching! You've earned +30 CNFC Points. Click Refresh to see your updated balance.");
+            await ctx.answerCbQuery("Reward claimed!");
+        } else {
+            await ctx.answerCbQuery("Could not find your user data. Please /start the bot again.", { show_alert: true });
+        }
+    } catch (err) {
+        console.error("❌ ERROR claiming ad reward:", err);
+        await ctx.answerCbQuery("An error occurred while claiming your reward.", { show_alert: true });
+    }
 });
 
 bot.action("read_article", async (ctx) => {
-    // ... (This function is fine)
+    await ctx.answerCbQuery();
+    await ctx.reply("⏳ Processing... generating your unique session code.");
+    try {
+        const telegramId = ctx.from.id;
+        await doc.loadInfo();
+        const sheet = doc.sheetsByTitle[SHEET_TITLE];
+        if (!sheet) throw new Error(`Sheet '${SHEET_TITLE}' not found.`);
+        const row = await getUserRow(sheet, telegramId);
+        if (row) {
+            const sessionCode = generateSessionCode();
+            row.set('ArticleSessionID', sessionCode);
+            await row.save();
+            const articleLink = `${ARTICLE_URL}?session=${sessionCode}`;
+            await ctx.replyWithHTML(
+                `<b>Here are your steps:</b>\n\n` +
+                `1. Click the button below to open an article with your unique session ID.\n` +
+                `2. Read the article for at least <b>2 minutes</b>.\n` +
+                `3. At the bottom of the article, copy the session ID.\n` +
+                `4. Paste the ID back here in the chat to receive your reward.`,
+                Markup.inlineKeyboard([
+                    [Markup.button.url("📰 Read Article", articleLink)]
+                ])
+            );
+        } else {
+            await ctx.reply("Could not find your user data. Please /start the bot again.");
+        }
+    } catch (err) {
+        console.error("❌ ERROR generating article link:", err);
+        await ctx.reply("An error occurred. Please try again.");
+    }
 });
 
 // --- 8. Launch Bot ---
