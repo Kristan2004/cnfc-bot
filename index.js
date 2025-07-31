@@ -59,23 +59,10 @@ function generateSessionCode() {
 }
 
 async function getUserRow(sheet, telegramId) {
-  await sheet.loadHeaderRow(); // Ensure headers are loaded
+  await sheet.loadHeaderRow();
   const rows = await sheet.getRows();
   return rows.find((row) => row.get('TelegramID') === String(telegramId));
 }
-
-// ✅ NEW: Centralized function to build the profile keyboard markup
-function buildProfileMarkup() {
-    const keyboard = Markup.inlineKeyboard([
-        [Markup.button.callback("🔄 Refresh", "refresh_profile")],
-        [Markup.button.callback("Watch Ad (+30 Points)", "watch_ad")],
-        [Markup.button.callback("Read Article (+100 Points)", "read_article")]
-    ]);
-    // For debugging: This will show the exact object being sent to Telegram
-    console.log('Built Keyboard Markup:', JSON.stringify(keyboard));
-    return keyboard;
-}
-
 
 // --- 7. Main Bot Logic ---
 async function sendTask(ctx, row) {
@@ -99,10 +86,17 @@ async function sendTask(ctx, row) {
       const balance = row.get('Balance') || 0;
       const referrals = row.get('Referrals') || 0;
       
-      const profileText = `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`;
-      
-      // ✅ MODIFIED: Use the new helper function to send the message with buttons
-      await ctx.replyWithHTML(profileText, buildProfileMarkup());
+      await ctx.reply(
+        `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`,
+        {
+          parse_mode: "HTML",
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback("🔄 Refresh", "refresh_profile")],
+            [Markup.button.callback("Watch Ad (+30 Points)", "watch_ad")],
+            [Markup.button.callback("Read Article (+100 Points)", "read_article")]
+          ])
+        }
+      );
     }
   } catch (err) {
     console.error(`❌ ERROR in sendTask for task "${task}":`, err);
@@ -203,7 +197,7 @@ bot.on("text", async (ctx) => {
             row.set('Balance', parseInt(row.get('Balance') || 0) + 100);
             row.set('ArticleSessionID', '');
             await row.save();
-            await ctx.reply("✅ Success! You've earned +100 CNFC Points. Click Refresh to see your updated balance.");
+            await ctx.reply("✅ Success! You've earned +100 CNFC Points. Click /start or refresh to see your updated balance.");
         } else if (row.get('TaskStatus') === "telegram_done") {
             row.set('InstagramUsername', text);
             row.set('TaskStatus', "instagram_done");
@@ -252,13 +246,17 @@ bot.action("refresh_profile", async (ctx) => {
         const balance = row.get('Balance') || 0;
         const referrals = row.get('Referrals') || 0;
 
-        const profileText = `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`;
-
-        // ✅ MODIFIED: Use the helper function to edit the message and keep the buttons
-        await ctx.editMessageText(profileText, {
-            parse_mode: "HTML",
-            ...buildProfileMarkup() // Use spread syntax for editing
-        });
+        await ctx.editMessageText(
+            `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`,
+            {
+                parse_mode: "HTML",
+                reply_markup: Markup.inlineKeyboard([
+                    [Markup.button.callback("🔄 Refresh", "refresh_profile")],
+                    [Markup.button.callback("Watch Ad (+30 Points)", "watch_ad")],
+                    [Markup.button.callback("Read Article (+100 Points)", "read_article")]
+                ])
+            }
+        );
         await ctx.answerCbQuery();
     } catch (err) {
         if (!err.description?.includes('message is not modified')) {
@@ -308,7 +306,7 @@ bot.action('claim_ad_reward', async (ctx) => {
                 userAdCooldown.delete(telegramId);
             }, 60000);
 
-            await ctx.editMessageText("✅ Thanks for watching! You've earned +30 CNFC Points. Click Refresh to see your updated balance.");
+            await ctx.editMessageText("✅ Thanks for watching! You've earned +30 CNFC Points. Click /start or refresh to see your updated balance.");
             await ctx.answerCbQuery("Reward claimed!");
         } else {
             await ctx.answerCbQuery("Could not find your user data. Please /start the bot again.", { show_alert: true });
@@ -333,12 +331,14 @@ bot.action("read_article", async (ctx) => {
             row.set('ArticleSessionID', sessionCode);
             await row.save();
             const articleLink = `${ARTICLE_URL}?session=${sessionCode}`;
+            
+            // ✅ MODIFIED: Removed the line that shows the session ID
             await ctx.replyWithHTML(
                 `<b>Here are your steps:</b>\n\n` +
                 `1. Click the button below to open an article with your unique session ID.\n` +
                 `2. Read the article for at least <b>2 minutes</b>.\n` +
                 `3. At the bottom of the article, copy the session ID.\n` +
-                `4. Paste the ID back here in the chat to receive your reward.\n\n` +,
+                `4. Paste the ID back here in the chat to receive your reward.`,
                 Markup.inlineKeyboard([
                     [Markup.button.url("📰 Read Article", articleLink)]
                 ])
