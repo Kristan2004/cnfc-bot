@@ -24,17 +24,11 @@ const serviceAccountAuth = new JWT({
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
-// --- 3. Express Server ---
-const app = express();
-const port = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('CNFC Telegram Bot is running.'));
-app.listen(port, () => console.log(`✅ Web server listening on port ${port}`));
-
-// --- 4. Bot and Google Sheet Initialization ---
+// --- 3. Bot and Google Sheet Initialization ---
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, serviceAccountAuth);
 
-// --- 5. Constants ---
+// --- 4. Constants ---
 const SHEET_TITLE = "ChainFabric Bot Users";
 const CHANNEL_USERNAME = "chainfabric_official";
 const CHANNEL_USERNAME2 = "chainfabricnews";
@@ -42,40 +36,29 @@ const INSTAGRAM_URL = "https://instagram.com/chainfabric";
 const YOUTUBE_URL = "https://youtube.com/@chainfabric";
 const ARTICLE_URL = "https://chainfabricnews.blogspot.com/";
 const AD_URL = "https://otieu.com/4/9649985";
+const WEBHOOK_URL = `https://YOUR_RENDER_SERVICE_NAME.onrender.com`; // IMPORTANT: Replace with your Render URL
 
-// --- 6. Helper Functions ---
+// --- 5. Helper Functions ---
+// ... (all your helper functions like generateReferralCode, generateSessionCode, etc. are here)
 const generateReferralCode = (count) => "USER" + String(count + 1).padStart(3, "0");
-
 function generateSessionCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const nums = '0123456789';
-  let charPart = '';
-  let numPart = '';
+  let charPart = ''; let numPart = '';
   for (let i = 0; i < 4; i++) {
     charPart += chars.charAt(Math.floor(Math.random() * chars.length));
     numPart += nums.charAt(Math.floor(Math.random() * nums.length));
   }
   return `${charPart}${numPart}`;
 }
-
 async function getUserRow(sheet, telegramId) {
   await sheet.loadHeaderRow();
   const rows = await sheet.getRows();
   return rows.find((row) => row.get('TelegramID') === String(telegramId));
 }
 
-function buildProfileMarkup() {
-    const keyboard = Markup.inlineKeyboard([
-        [Markup.button.callback("🔄 Refresh", "refresh_profile")],
-        [Markup.button.callback("Watch Ad (+30 Points)", "watch_ad")],
-        [Markup.button.callback("Read Article (+100 Points)", "read_article")]
-    ]);
-    console.log('Built Keyboard Markup:', JSON.stringify(keyboard));
-    return keyboard;
-}
-
-
-// --- 7. Main Bot Logic ---
+// --- 6. Main Bot Logic ---
+// ... (all your bot logic like sendTask, sendProfile, bot.start, bot.action, etc. remains exactly the same)
 async function sendTask(ctx, row) {
   const task = row.get('TaskStatus') || "start";
   try {
@@ -93,26 +76,24 @@ async function sendTask(ctx, row) {
       await ctx.reply("✅ Instagram Username Saved!\n\n+500 CNFC Points");
       await ctx.reply("▶️ Subscribe our YouTube and send screenshot proof:", Markup.inlineKeyboard([Markup.button.url("Subscribe YouTube", YOUTUBE_URL)]));
     } else if (task === "youtube_done") {
-      const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.get('ReferralCode')}`;
-      const balance = row.get('Balance') || 0;
-      const referrals = row.get('Referrals') || 0;
-      const profileText = `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`;
-      await ctx.replyWithHTML(profileText, buildProfileMarkup());
+      await sendProfile(ctx, row);
     }
-  } catch (err) {
-    console.error(`❌ ERROR in sendTask for task "${task}":`, err);
-  }
+  } catch (err) { console.error(`❌ ERROR in sendTask for task "${task}":`, err); }
 }
-
 async function sendProfile(ctx, row) {
     const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.get('ReferralCode')}`;
     const balance = row.get('Balance') || 0;
     const referrals = row.get('Referrals') || 0;
     const profileText = `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`;
-    await ctx.replyWithHTML(profileText, buildProfileMarkup());
+    await ctx.reply(profileText, {
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [
+            [{ text: "🔄 Refresh", callback_data: "refresh_profile" }],
+            [{ text: "Watch Ad (+30 Points)", callback_data: "watch_ad" }],
+            [{ text: "Read Article (+100 Points)", callback_data: "read_article" }]
+        ]}
+    });
 }
-
-
 bot.start(async (ctx) => {
     try {
         const telegramId = ctx.from.id;
@@ -145,12 +126,8 @@ bot.start(async (ctx) => {
             }
         }
         await sendTask(ctx, userRow);
-    } catch(err) {
-        console.error("❌ ERROR in bot.start:", err);
-        ctx.reply("An error occurred. Please try again later.");
-    }
+    } catch(err) { console.error("❌ ERROR in bot.start:", err); ctx.reply("An error occurred. Please try again later."); }
 });
-
 bot.command('balance', async (ctx) => {
     try {
         const telegramId = ctx.from.id;
@@ -163,12 +140,8 @@ bot.command('balance', async (ctx) => {
         } else {
             await ctx.reply("I don't have a record for you yet. Please send /start to begin.");
         }
-    } catch(err) {
-        console.error("❌ ERROR in /balance command:", err);
-        await ctx.reply("An error occurred while fetching your balance.");
-    }
+    } catch(err) { console.error("❌ ERROR in /balance command:", err); await ctx.reply("An error occurred while fetching your balance."); }
 });
-
 bot.action("verify_telegram", async (ctx) => {
     try {
         const telegramId = ctx.from.id;
@@ -177,7 +150,6 @@ bot.action("verify_telegram", async (ctx) => {
         if (!sheet) throw new Error(`Sheet '${SHEET_TITLE}' not found.`);
         let row = await getUserRow(sheet, telegramId);
         if (!row) {
-            console.log(`User ${telegramId} clicked 'verify_telegram' but was not found. Creating new entry.`);
             const name = ctx.from.first_name || "";
             const username = ctx.from.username || "";
             const rows = await sheet.getRows();
@@ -197,12 +169,8 @@ bot.action("verify_telegram", async (ctx) => {
         await row.save();
         await sendTask(ctx, row);
         await ctx.answerCbQuery();
-    } catch(err) {
-        console.error("❌ ERROR in verify_telegram:", err);
-        await ctx.answerCbQuery("An error occurred. Please try again.", { show_alert: true });
-    }
+    } catch(err) { console.error("❌ ERROR in verify_telegram:", err); await ctx.answerCbQuery("An error occurred. Please try again.", { show_alert: true }); }
 });
-
 bot.on("text", async (ctx) => {
     if (ctx.message.text.startsWith('/')) return;
     try {
@@ -225,11 +193,8 @@ bot.on("text", async (ctx) => {
             await row.save();
             await sendTask(ctx, row);
         }
-    } catch (err) {
-        console.error("❌ ERROR in bot.on('text'):", err);
-    }
+    } catch (err) { console.error("❌ ERROR in bot.on('text'):", err); }
 });
-
 bot.on("photo", async (ctx) => {
   try {
     const telegramId = ctx.from.id;
@@ -247,11 +212,8 @@ bot.on("photo", async (ctx) => {
       await ctx.reply("🎉 Thanks for joining ChainFabric!\n\nYou can earn minumum 2000 CNFC points and No limit of maximum CNFC points you can earn. \n📬 Copy your referral link and share it to earn +1000 CNFC Points per signup (no limit)!. \n🗓️ You will receive the all points you earn on ChainFabric when we launch on 16th August 2025 to claim your rewards.");
       await sendTask(ctx, row);
     }
-  } catch (err) {
-    console.error("❌ ERROR in bot.on('photo'):", err);
-  }
+  } catch (err) { console.error("❌ ERROR in bot.on('photo'):", err); }
 });
-
 bot.action("refresh_profile", async (ctx) => {
     try {
         const telegramId = ctx.from.id;
@@ -266,7 +228,11 @@ bot.action("refresh_profile", async (ctx) => {
         const profileText = `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`;
         await ctx.editMessageText(profileText, {
             parse_mode: "HTML",
-            ...buildProfileMarkup()
+            reply_markup: { inline_keyboard: [
+                [{ text: "🔄 Refresh", callback_data: "refresh_profile" }],
+                [{ text: "Watch Ad (+30 Points)", callback_data: "watch_ad" }],
+                [{ text: "Read Article (+100 Points)", callback_data: "read_article" }]
+            ]}
         });
         await ctx.answerCbQuery();
     } catch (err) {
@@ -276,32 +242,23 @@ bot.action("refresh_profile", async (ctx) => {
         await ctx.answerCbQuery("Data is already up to date.");
     }
 });
-
 const userAdCooldown = new Set();
 bot.action("watch_ad", async (ctx) => {
     if (userAdCooldown.has(ctx.from.id)) {
         return ctx.answerCbQuery("Please wait at least 1 minute before watching another ad.", { show_alert: true });
     }
     await ctx.answerCbQuery();
-    await ctx.reply(
-        "⚠️ <b>Disclaimer & Warning</b> ⚠️\nWe are not responsible for the content of the ads shown. Do not click on, download, or install anything from the ads. Proceed at your own risk.",
-        { parse_mode: "HTML" }
-    );
-    await ctx.reply(
-        "Please watch the ad for at least 1 minute to receive your reward.",
-        Markup.inlineKeyboard([
+    await ctx.reply( "⚠️ <b>Disclaimer & Warning</b> ⚠️\nWe are not responsible for the content of the ads shown. Do not click on, download, or install anything from the ads. Proceed at your own risk.", { parse_mode: "HTML" });
+    await ctx.reply( "Please watch the ad for at least 1 minute to receive your reward.", Markup.inlineKeyboard([
             [Markup.button.url("📺 Watch Ad", AD_URL)],
             [Markup.button.callback("✅ I Watched the Ad", "claim_ad_reward")]
-        ])
-    );
+    ]));
 });
-
 bot.action('claim_ad_reward', async (ctx) => {
     const telegramId = ctx.from.id;
     if (userAdCooldown.has(telegramId)) {
         return ctx.answerCbQuery("You have already claimed this reward recently. Please wait.", { show_alert: true });
     }
-    
     try {
         await doc.loadInfo();
         const sheet = doc.sheetsByTitle[SHEET_TITLE];
@@ -311,20 +268,14 @@ bot.action('claim_ad_reward', async (ctx) => {
             row.set('Balance', parseInt(row.get('Balance') || 0) + 30);
             await row.save();
             userAdCooldown.add(telegramId);
-            setTimeout(() => {
-                userAdCooldown.delete(telegramId);
-            }, 60000);
+            setTimeout(() => { userAdCooldown.delete(telegramId); }, 60000);
             await ctx.editMessageText("✅ Thanks for watching! You've earned +30 CNFC Points. Click /balance or Refresh to see your updated balance.");
             await ctx.answerCbQuery("Reward claimed!");
         } else {
             await ctx.answerCbQuery("Could not find your user data. Please /start the bot again.", { show_alert: true });
         }
-    } catch (err) {
-        console.error("❌ ERROR claiming ad reward:", err);
-        await ctx.answerCbQuery("An error occurred while claiming your reward.", { show_alert: true });
-    }
+    } catch (err) { console.error("❌ ERROR claiming ad reward:", err); await ctx.answerCbQuery("An error occurred while claiming your reward.", { show_alert: true }); }
 });
-
 bot.action("read_article", async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.reply("⏳ Processing... generating your unique session code.");
@@ -352,18 +303,25 @@ bot.action("read_article", async (ctx) => {
         } else {
             await ctx.reply("Could not find your user data. Please /start the bot again.");
         }
-    } catch (err) {
-        console.error("❌ ERROR generating article link:", err);
-        await ctx.reply("An error occurred. Please try again.");
-    }
+    } catch (err) { console.error("❌ ERROR generating article link:", err); await ctx.reply("An error occurred. Please try again."); }
 });
 
-// --- 8. Launch Bot ---
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
-bot.launch().then(() => {
-  console.log('✅ Bot launched successfully!');
-}).catch(err => {
-  console.error('❌ FATAL: Failed to launch bot:', err);
+// --- 8. Express Server & Webhook Setup ---
+const app = express();
+const secretPath = `/telegraf/${bot.secretPathComponent()}`;
+
+// Set the bot webhook
+bot.telegram.setWebhook(`${WEBHOOK_URL}${secretPath}`);
+
+// Set up Express to handle webhook updates
+app.use(bot.webhookCallback(secretPath));
+
+app.get('/', (req, res) => {
+  res.send('CNFC Telegram Bot is running with webhooks!');
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`✅ Web server listening on port ${port}`);
 });
