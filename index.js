@@ -143,6 +143,29 @@ bot.start(async (ctx) => {
     }
 });
 
+// ✅ NEW: Command to show balance and tasks
+bot.command('balance', async (ctx) => {
+    try {
+        const telegramId = ctx.from.id;
+        await doc.loadInfo();
+        const sheet = doc.sheetsByTitle[SHEET_TITLE];
+        if (!sheet) throw new Error(`Sheet with title "${SHEET_TITLE}" was not found.`);
+
+        const userRow = await getUserRow(sheet, telegramId);
+        if (userRow) {
+            // If the user exists, just call sendTask to show them the right message
+            await sendTask(ctx, userRow);
+        } else {
+            // If the user doesn't exist, tell them to start the bot
+            await ctx.reply("I don't have a record for you yet. Please send /start to begin.");
+        }
+    } catch(err) {
+        console.error("❌ ERROR in /balance command:", err);
+        await ctx.reply("An error occurred while fetching your balance.");
+    }
+});
+
+
 bot.action("verify_telegram", async (ctx) => {
     try {
         const telegramId = ctx.from.id;
@@ -197,7 +220,7 @@ bot.on("text", async (ctx) => {
             row.set('Balance', parseInt(row.get('Balance') || 0) + 100);
             row.set('ArticleSessionID', '');
             await row.save();
-            await ctx.reply("✅ Success! You've earned +100 CNFC Points. Click /start or refresh to see your updated balance.");
+            await ctx.reply("✅ Success! You've earned +100 CNFC Points. Click Refresh to see your updated balance.");
         } else if (row.get('TaskStatus') === "telegram_done") {
             row.set('InstagramUsername', text);
             row.set('TaskStatus', "instagram_done");
@@ -306,7 +329,7 @@ bot.action('claim_ad_reward', async (ctx) => {
                 userAdCooldown.delete(telegramId);
             }, 60000);
 
-            await ctx.editMessageText("✅ Thanks for watching! You've earned +30 CNFC Points. Click /start or refresh to see your updated balance.");
+            await ctx.editMessageText("✅ Thanks for watching! You've earned +30 CNFC Points. Click Refresh to see your updated balance.");
             await ctx.answerCbQuery("Reward claimed!");
         } else {
             await ctx.answerCbQuery("Could not find your user data. Please /start the bot again.", { show_alert: true });
@@ -331,8 +354,6 @@ bot.action("read_article", async (ctx) => {
             row.set('ArticleSessionID', sessionCode);
             await row.save();
             const articleLink = `${ARTICLE_URL}?session=${sessionCode}`;
-            
-            // ✅ MODIFIED: Removed the line that shows the session ID
             await ctx.replyWithHTML(
                 `<b>Here are your steps:</b>\n\n` +
                 `1. Click the button below to open an article with your unique session ID.\n` +
