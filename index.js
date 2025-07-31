@@ -217,7 +217,7 @@ bot.on("text", async (ctx) => {
             row.set('Balance', parseInt(row.get('Balance') || 0) + 100);
             row.set('ArticleSessionID', '');
             await row.save();
-            await ctx.reply("✅ Success! You've earned +100 CNFC Points. Click Refresh to see your updated balance.");
+            await ctx.reply("✅ Success! You've earned +100 CNFC Points. Click /balance or Refresh to see your updated balance.");
         } else if (row.get('TaskStatus') === "telegram_done") {
             row.set('InstagramUsername', text);
             row.set('TaskStatus', "instagram_done");
@@ -314,7 +314,7 @@ bot.action('claim_ad_reward', async (ctx) => {
             setTimeout(() => {
                 userAdCooldown.delete(telegramId);
             }, 60000);
-            await ctx.editMessageText("✅ Thanks for watching! You've earned +30 CNFC Points. Click Refresh to see your updated balance.");
+            await ctx.editMessageText("✅ Thanks for watching! You've earned +30 CNFC Points. Click /balance or Refresh to see your updated balance.");
             await ctx.answerCbQuery("Reward claimed!");
         } else {
             await ctx.answerCbQuery("Could not find your user data. Please /start the bot again.", { show_alert: true });
