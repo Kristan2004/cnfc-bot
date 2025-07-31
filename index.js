@@ -28,7 +28,7 @@ const serviceAccountAuth = new JWT({
 const app = express();
 const port = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('CNFC Telegram Bot is running.'));
-app.listen(port, () => console.log(`✅ Web server listening on port ${port}`));
+app.listen(port, () => console.log(`✅✅✅ BOT VERSION 2 IS RUNNING ON PORT ${port} ✅✅✅`));
 
 // --- 4. Bot and Google Sheet Initialization ---
 const bot = new Telegraf(process.env.BOT_TOKEN);
