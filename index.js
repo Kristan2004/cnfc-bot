@@ -142,7 +142,6 @@ bot.start(async (ctx) => {
     }
 });
 
-// ✅ FIXED: This function is now smarter and handles new users.
 bot.action("verify_telegram", async (ctx) => {
     try {
         const telegramId = ctx.from.id;
@@ -152,7 +151,6 @@ bot.action("verify_telegram", async (ctx) => {
 
         let row = await getUserRow(sheet, telegramId);
 
-        // If the user doesn't exist, create them on the fly.
         if (!row) {
             console.log(`User ${telegramId} clicked 'verify_telegram' but was not found. Creating new entry.`);
             const name = ctx.from.first_name || "";
@@ -163,7 +161,7 @@ bot.action("verify_telegram", async (ctx) => {
             row = await sheet.addRow({
                 TelegramID: telegramId, Name: name, Username: username,
                 JoinedAt: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
-                ReferralCode: newReferralCode, ReferredBy: '', // Can't know referrer from this button
+                ReferralCode: newReferralCode, ReferredBy: '',
                 Referrals: 0, Balance: 0, TaskStatus: "start"
             });
         }
