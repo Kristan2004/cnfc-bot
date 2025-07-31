@@ -28,7 +28,7 @@ const serviceAccountAuth = new JWT({
 const app = express();
 const port = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('CNFC Telegram Bot is running.'));
-app.listen(port, () => console.log(`✅ Web server listening on port ${port}`));
+app.listen(port, () => console.log(`✅✅✅ BOT VERSION 2 IS RUNNING ON PORT ${port} ✅✅✅`));
 
 // --- 4. Bot and Google Sheet Initialization ---
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -59,16 +59,13 @@ function generateSessionCode() {
 }
 
 async function getUserRow(sheet, telegramId) {
-  await sheet.loadHeaderRow(); // Ensure headers are loaded before getting rows
+  await sheet.loadHeaderRow();
   const rows = await sheet.getRows();
-  // ✅ Use .get() for consistency
   return rows.find((row) => row.get('TelegramID') === String(telegramId));
 }
 
-
 // --- 7. Main Bot Logic ---
 async function sendTask(ctx, row) {
-  // ✅ Use .get() for consistency
   const task = row.get('TaskStatus') || "start";
   try {
     if (task === "start") {
@@ -85,27 +82,31 @@ async function sendTask(ctx, row) {
       await ctx.reply("✅ Instagram Username Saved!\n\n+500 CNFC Points");
       await ctx.reply("▶️ Subscribe our YouTube and send screenshot proof:", Markup.inlineKeyboard([Markup.button.url("Subscribe YouTube", YOUTUBE_URL)]));
     } else if (task === "youtube_done") {
-      // ✅ Use .get() for consistency
-      const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.get('ReferralCode')}`;
-      const balance = row.get('Balance') || 0;
-      const referrals = row.get('Referrals') || 0;
-      
-      await ctx.reply(
-        `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`,
-        {
-          parse_mode: "HTML",
-          reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback("🔄 Refresh", "refresh_profile")],
-            [Markup.button.callback("Watch Ad (+30 Points)", "watch_ad")],
-            [Markup.button.callback("Read Article (+100 Points)", "read_article")]
-          ])
-        }
-      );
+      await sendProfile(ctx, row); // Use the dedicated profile function
     }
   } catch (err) {
     console.error(`❌ ERROR in sendTask for task "${task}":`, err);
   }
 }
+
+async function sendProfile(ctx, row) {
+    const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.get('ReferralCode')}`;
+    const balance = row.get('Balance') || 0;
+    const referrals = row.get('Referrals') || 0;
+    
+    await ctx.reply(
+      `👤 <b>Your Profile</b>\n\n💰 Balance: <b>${balance} CNFC</b>\n👥 Referrals: <b>${referrals}</b>\n🔗 Referral Link:\n${refLink}`,
+      {
+        parse_mode: "HTML",
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback("🔄 Refresh", "refresh_profile")],
+          [Markup.button.callback("Watch Ad (+30 Points)", "watch_ad")],
+          [Markup.button.callback("Read Article (+100 Points)", "read_article")]
+        ])
+      }
+    );
+}
+
 
 bot.start(async (ctx) => {
     try {
@@ -125,25 +126,16 @@ bot.start(async (ctx) => {
             let referredBy = "";
             let referrerRow = null;
             if (refCode) {
-                // ✅ Use .get() for consistency
                 referrerRow = rows.find((r) => r.get('ReferralCode') === refCode);
                 if (referrerRow) referredBy = refCode;
             }
-            // ✅ Use .set() and .save() for adding new row data for clarity
-            userRow = await sheet.addRow({});
-            userRow.set('TelegramID', telegramId);
-            userRow.set('Name', name);
-            userRow.set('Username', username);
-            userRow.set('JoinedAt', new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }));
-            userRow.set('ReferralCode', newReferralCode);
-            userRow.set('ReferredBy', referredBy);
-            userRow.set('Referrals', 0);
-            userRow.set('Balance', 0);
-            userRow.set('TaskStatus', "start");
-            await userRow.save();
-
+            userRow = await sheet.addRow({
+                TelegramID: telegramId, Name: name, Username: username,
+                JoinedAt: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+                ReferralCode: newReferralCode, ReferredBy: referredBy,
+                Referrals: 0, Balance: 0, TaskStatus: "start"
+            });
             if (referrerRow) {
-                // ✅ Use .get() and .set() for consistency
                 referrerRow.set('Referrals', parseInt(referrerRow.get('Referrals') || 0) + 1);
                 referrerRow.set('Balance', parseInt(referrerRow.get('Balance') || 0) + 1000);
                 await referrerRow.save();
@@ -156,39 +148,54 @@ bot.start(async (ctx) => {
     }
 });
 
+// ✅ MODIFIED: /balance command now always shows the final profile
+bot.command('balance', async (ctx) => {
+    try {
+        const telegramId = ctx.from.id;
+        await doc.loadInfo();
+        const sheet = doc.sheetsByTitle[SHEET_TITLE];
+        if (!sheet) throw new Error(`Sheet with title "${SHEET_TITLE}" was not found.`);
+
+        const userRow = await getUserRow(sheet, telegramId);
+        if (userRow) {
+            // Always send the final profile message with buttons
+            await sendProfile(ctx, userRow); 
+        } else {
+            await ctx.reply("I don't have a record for you yet. Please send /start to begin.");
+        }
+    } catch(err) {
+        console.error("❌ ERROR in /balance command:", err);
+        await ctx.reply("An error occurred while fetching your balance.");
+    }
+});
+
+
 bot.action("verify_telegram", async (ctx) => {
     try {
         const telegramId = ctx.from.id;
         await doc.loadInfo();
         const sheet = doc.sheetsByTitle[SHEET_TITLE];
         if (!sheet) throw new Error(`Sheet '${SHEET_TITLE}' not found.`);
-        let row = await getUserRow(sheet, telegramId);
 
+        let row = await getUserRow(sheet, telegramId);
         if (!row) {
-            // ✅ Use .set() and .save() for clarity
+            console.log(`User ${telegramId} clicked 'verify_telegram' but was not found. Creating new entry.`);
             const name = ctx.from.first_name || "";
             const username = ctx.from.username || "";
             const rows = await sheet.getRows();
             const newReferralCode = generateReferralCode(rows.length);
-            row = await sheet.addRow({});
-            row.set('TelegramID', telegramId);
-            row.set('Name', name);
-            row.set('Username', username);
-            row.set('JoinedAt', new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }));
-            row.set('ReferralCode', newReferralCode);
-            row.set('ReferredBy', '');
-            row.set('Referrals', 0);
-            row.set('Balance', 0);
-            row.set('TaskStatus', "start");
-            await row.save();
+            row = await sheet.addRow({
+                TelegramID: telegramId, Name: name, Username: username,
+                JoinedAt: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+                ReferralCode: newReferralCode, ReferredBy: '',
+                Referrals: 0, Balance: 0, TaskStatus: "start"
+            });
         }
-        
-        // ✅ Use .get() for consistency
+
         if (row.get('TaskStatus') !== "start") {
             return ctx.answerCbQuery("You have already completed this step.");
         }
 
-        // ✅ Use .get() and .set() for consistency
         row.set('TaskStatus', "telegram_done");
         row.set('Balance', parseInt(row.get('Balance') || 0) + 1000);
         await row.save();
@@ -211,7 +218,6 @@ bot.on("text", async (ctx) => {
         const row = await getUserRow(sheet, telegramId);
         if (!row) return ctx.reply("❌ You need to /start first.");
         
-        // ✅ Use .get() and .set() for consistency
         if (row.get('ArticleSessionID') && row.get('ArticleSessionID') === text) {
             row.set('Balance', parseInt(row.get('Balance') || 0) + 100);
             row.set('ArticleSessionID', '');
@@ -238,7 +244,6 @@ bot.on("photo", async (ctx) => {
     const row = await getUserRow(sheet, telegramId);
     if (!row) return ctx.reply("❌ You need to /start first.");
 
-    // ✅ Use .get() and .set() for consistency
     if (row.get('TaskStatus') === "instagram_done") {
       row.set('YouTubeVerified', "✅ Yes");
       row.set('TaskStatus', "youtube_done");
@@ -262,7 +267,6 @@ bot.action("refresh_profile", async (ctx) => {
         const row = await getUserRow(sheet, telegramId);
         if (!row) return ctx.answerCbQuery("❌ You need to /start first.", { show_alert: true });
 
-        // ✅ Use .get() for consistency
         const refLink = `https://t.me/${ctx.botInfo.username}?start=${row.get('ReferralCode')}`;
         const balance = row.get('Balance') || 0;
         const referrals = row.get('Referrals') || 0;
@@ -289,7 +293,21 @@ bot.action("refresh_profile", async (ctx) => {
 
 const userAdCooldown = new Set();
 bot.action("watch_ad", async (ctx) => {
-    // ... (This function is fine)
+    if (userAdCooldown.has(ctx.from.id)) {
+        return ctx.answerCbQuery("Please wait at least 1 minute before watching another ad.", { show_alert: true });
+    }
+    await ctx.answerCbQuery();
+    await ctx.reply(
+        "⚠️ <b>Disclaimer & Warning</b> ⚠️\nWe are not responsible for the content of the ads shown. Do not click on, download, or install anything from the ads. Proceed at your own risk.",
+        { parse_mode: "HTML" }
+    );
+    await ctx.reply(
+        "Please watch the ad for at least 1 minute to receive your reward.",
+        Markup.inlineKeyboard([
+            [Markup.button.url("📺 Watch Ad", AD_URL)],
+            [Markup.button.callback("✅ I Watched the Ad", "claim_ad_reward")]
+        ])
+    );
 });
 
 bot.action('claim_ad_reward', async (ctx) => {
@@ -303,12 +321,16 @@ bot.action('claim_ad_reward', async (ctx) => {
         const sheet = doc.sheetsByTitle[SHEET_TITLE];
         if (!sheet) throw new Error(`Sheet '${SHEET_TITLE}' not found.`);
         const row = await getUserRow(sheet, telegramId);
+
         if (row) {
-            // ✅ Use .get() and .set() for consistency
             row.set('Balance', parseInt(row.get('Balance') || 0) + 30);
             await row.save();
+            
             userAdCooldown.add(telegramId);
-            setTimeout(() => userAdCooldown.delete(telegramId), 60000);
+            setTimeout(() => {
+                userAdCooldown.delete(telegramId);
+            }, 60000);
+
             await ctx.editMessageText("✅ Thanks for watching! You've earned +30 CNFC Points. Click Refresh to see your updated balance.");
             await ctx.answerCbQuery("Reward claimed!");
         } else {
@@ -331,7 +353,6 @@ bot.action("read_article", async (ctx) => {
         const row = await getUserRow(sheet, telegramId);
         if (row) {
             const sessionCode = generateSessionCode();
-            // ✅ Use .set() for consistency
             row.set('ArticleSessionID', sessionCode);
             await row.save();
             const articleLink = `${ARTICLE_URL}?session=${sessionCode}`;
