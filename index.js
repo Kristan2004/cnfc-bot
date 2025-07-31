@@ -338,8 +338,7 @@ bot.action("read_article", async (ctx) => {
                 `1. Click the button below to open an article with your unique session ID.\n` +
                 `2. Read the article for at least <b>2 minutes</b>.\n` +
                 `3. At the bottom of the article, copy the session ID.\n` +
-                `4. Paste the ID back here in the chat to receive your reward.\n\n` +
-                `Your Session ID is: <code>${sessionCode}</code>`,
+                `4. Paste the ID back here in the chat to receive your reward.\n\n` +,
                 Markup.inlineKeyboard([
                     [Markup.button.url("📰 Read Article", articleLink)]
                 ])
