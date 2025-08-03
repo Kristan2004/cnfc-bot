@@ -12,15 +12,19 @@ const pool = new Pool({
 });
 
 // --- 2. Constants ---
-const SHEET_TITLE = "ChainFabric Bot Users"; // kept for semantic continuity but unused now
 const CHANNEL_USERNAME = "chainfabric_official";
 const CHANNEL_USERNAME2 = "chainfabricnews";
 const INSTAGRAM_URL = "https://instagram.com/chainfabric";
 const YOUTUBE_URL = "https://youtube.com/@chainfabric";
 const ARTICLE_URL = "https://chainfabricnews.blogspot.com/";
 const AD_URL = "https://otieu.com/4/9649985";
-const WEBHOOK_URL = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`; // dynamic Render domain
-const SECRET_PATH = "/telegraf/chainfabric_secret"; // stable path for webhook
+const WEBHOOK_URL = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
+const SECRET_PATH = "/telegraf/chainfabric_secret";
+const REQUIRED_CHANNELS = [
+    { id: process.env.CHANNEL_ID_1, username: CHANNEL_USERNAME },
+    { id: process.env.CHANNEL_ID_2, username: CHANNEL_USERNAME2 }
+];
+
 
 // --- 3. Bot Init ---
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -39,7 +43,6 @@ function generateSessionCode() {
   return code;
 }
 
-// Fetch user row from Postgres
 async function getUserRow(telegramId) {
   const res = await pool.query(
     `SELECT * FROM users WHERE telegram_id = $1`,
@@ -48,19 +51,14 @@ async function getUserRow(telegramId) {
   return res.rows[0];
 }
 
-// Create new user with optional referrer (inside transaction context)
 async function createUserWithReferral(client, { telegramId, name, username, refCode }) {
-  // Count existing users for referral code generation
   const countRes = await client.query(`SELECT COUNT(*) FROM users`);
   const newReferralCode = "USER" + String(parseInt(countRes.rows[0].count, 10) + 1).padStart(3, "0");
-
   let referredBy = '';
   if (refCode) {
-    // Check if referrer exists
     const referrer = (await client.query(`SELECT * FROM users WHERE referral_code = $1`, [refCode])).rows[0];
     if (referrer) {
       referredBy = refCode;
-      // Increment referrer metrics
       await client.query(
         `UPDATE users
          SET referrals = referrals + 1,
@@ -70,7 +68,6 @@ async function createUserWithReferral(client, { telegramId, name, username, refC
       );
     }
   }
-
   await client.query(
     `INSERT INTO users (
        telegram_id, name, username, joined_at, referral_code,
@@ -78,12 +75,10 @@ async function createUserWithReferral(client, { telegramId, name, username, refC
      ) VALUES ($1,$2,$3,$4,$5,$6,0,0,'start')`,
     [String(telegramId), name, username, new Date().toISOString(), newReferralCode, referredBy]
   );
-
   const userRow = (await client.query(`SELECT * FROM users WHERE telegram_id = $1`, [String(telegramId)])).rows[0];
   return userRow;
 }
 
-// Generic field updater
 async function updateUserField(telegramId, fields) {
   const keys = Object.keys(fields);
   if (keys.length === 0) return;
@@ -92,6 +87,30 @@ async function updateUserField(telegramId, fields) {
   const sql = `UPDATE users SET ${setClauses} WHERE telegram_id = $1`;
   await pool.query(sql, values);
 }
+
+// ✅ NEW: Reusable function to check channel membership
+async function checkChannelMembership(ctx) {
+    let notJoined = [];
+    for (const channel of REQUIRED_CHANNELS) {
+        if (!channel.id) continue; // Skip if channel ID is not set in .env
+        try {
+            const member = await ctx.telegram.getChatMember(channel.id, ctx.from.id);
+            if (!['member', 'administrator', 'creator'].includes(member.status)) {
+                notJoined.push(`@${channel.username}`);
+            }
+        } catch (e) {
+            console.error(`Error checking membership for user ${ctx.from.id} in channel ${channel.id}:`, e.message);
+            notJoined.push(`@${channel.username}`); // Assume not joined if there's an API error
+        }
+    }
+
+    if (notJoined.length > 0) {
+        await ctx.reply(`You must be a member of all required channels to use the bot. Please rejoin: ${notJoined.join(', ')}`);
+        return false; // User is not a member
+    }
+    return true; // User is a member of all channels
+}
+
 
 // --- 5. Bot Logic ---
 const userAdCooldown = new Set();
@@ -147,20 +166,11 @@ bot.start(async (ctx) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
     let userRow = (await client.query(`SELECT * FROM users WHERE telegram_id = $1`, [telegramId])).rows[0];
-
     if (!userRow) {
-      userRow = await createUserWithReferral(client, {
-        telegramId,
-        name,
-        username,
-        refCode
-      });
+      userRow = await createUserWithReferral(client, { telegramId, name, username, refCode });
     }
-
     await client.query('COMMIT');
-
     await sendTask(ctx, userRow);
   } catch (err) {
     await client.query('ROLLBACK');
@@ -173,6 +183,7 @@ bot.start(async (ctx) => {
 
 bot.command('balance', async (ctx) => {
   try {
+    if (!(await checkChannelMembership(ctx))) return;
     const telegramId = String(ctx.from.id);
     const userRow = await getUserRow(telegramId);
     if (userRow) {
@@ -189,16 +200,23 @@ bot.command('balance', async (ctx) => {
 bot.action("verify_telegram", async (ctx) => {
   try {
     const telegramId = String(ctx.from.id);
-    let userRow = await getUserRow(telegramId);
+    await ctx.answerCbQuery("Verifying your membership...");
+    if (!(await checkChannelMembership(ctx))) return;
 
+    let userRow = await getUserRow(telegramId);
     if (!userRow) {
-      // create fallback user without referrer
-      userRow = await createUserWithReferral(await pool.connect(), {
-        telegramId,
-        name: ctx.from.first_name || "",
-        username: ctx.from.username || "",
-        refCode: ""
-      });
+        // Fallback for safety, though /start should handle this.
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            userRow = await createUserWithReferral(client, { telegramId, name: ctx.from.first_name || "", username: ctx.from.username || "", refCode: "" });
+            await client.query('COMMIT');
+        } catch(e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
     }
 
     if (userRow.task_status !== "start") {
@@ -212,17 +230,17 @@ bot.action("verify_telegram", async (ctx) => {
 
     const updatedRow = await getUserRow(telegramId);
     await sendTask(ctx, updatedRow);
-    await ctx.answerCbQuery();
   } catch (err) {
     console.error("❌ ERROR in verify_telegram:", err);
-    await ctx.answerCbQuery("An error occurred. Please try again.", { show_alert: true });
+    await ctx.reply("An error occurred during verification. Please try again.");
   }
 });
 
+
 bot.on("text", async (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
-
   try {
+    if (!(await checkChannelMembership(ctx))) return;
     const telegramId = String(ctx.from.id);
     const text = ctx.message.text.trim();
     const row = await getUserRow(telegramId);
@@ -235,6 +253,12 @@ bot.on("text", async (ctx) => {
       });
       await ctx.reply("✅ Success! You've earned +100 CNFC Points. Click /balance or Refresh to see your updated balance.");
     } else if (row.task_status === "telegram_done") {
+      // ✅ NEW: Check if Instagram username already exists
+      const existingUser = (await pool.query(`SELECT * FROM users WHERE instagram_username = $1`, [text])).rows[0];
+      if (existingUser) {
+        return ctx.reply("This Instagram username has already been registered. Please enter a different one.");
+      }
+      
       await updateUserField(telegramId, {
         instagram_username: text,
         task_status: "instagram_done",
@@ -250,20 +274,18 @@ bot.on("text", async (ctx) => {
 
 bot.on("photo", async (ctx) => {
   try {
+    if (!(await checkChannelMembership(ctx))) return;
     const telegramId = String(ctx.from.id);
     const row = await getUserRow(telegramId);
     if (!row) return ctx.reply("❌ You need to /start first.");
-
     if (row.task_status === "instagram_done") {
       await updateUserField(telegramId, {
         youtube_verified: "✅ Yes",
         task_status: "youtube_done",
         balance: (parseInt(row.balance || 0, 10) + 500)
       });
-
       await ctx.reply("✅ YouTube subscription verified.\n\n+500 CNFC Points");
       await ctx.reply("🎉 Thanks for joining ChainFabric!\n\nYou can earn minimum 2000 CNFC points and there's no limit to how much you can earn. Share your referral link to earn +1000 CNFC per signup. All rewards will be claimable on 16th August 2025.");
-
       const updatedRow = await getUserRow(telegramId);
       await sendTask(ctx, updatedRow);
     }
@@ -274,10 +296,12 @@ bot.on("photo", async (ctx) => {
 
 bot.action("refresh_profile", async (ctx) => {
   try {
+    if (!(await checkChannelMembership(ctx))) {
+        return ctx.answerCbQuery("Please rejoin our channels to refresh your profile.", { show_alert: true });
+    }
     const telegramId = String(ctx.from.id);
     const row = await getUserRow(telegramId);
     if (!row) return ctx.answerCbQuery("❌ You need to /start first.", { show_alert: true });
-
     await sendProfile(ctx, row);
     await ctx.answerCbQuery();
   } catch (err) {
@@ -289,11 +313,13 @@ bot.action("refresh_profile", async (ctx) => {
 });
 
 bot.action("watch_ad", async (ctx) => {
+  if (!(await checkChannelMembership(ctx))) {
+      return ctx.answerCbQuery("Please rejoin our channels to watch an ad.", { show_alert: true });
+  }
   const telegramId = String(ctx.from.id);
   if (userAdCooldown.has(telegramId)) {
     return ctx.answerCbQuery("Please wait at least 1 minute before watching another ad.", { show_alert: true });
   }
-
   await ctx.answerCbQuery();
   await ctx.reply("⚠️ <b>Disclaimer:</b> We are not responsible for ad content. Avoid clicking suspicious links.", { parse_mode: "HTML" });
   await ctx.reply("Watch this ad for 1 minute, then click the confirmation button.", Markup.inlineKeyboard([
@@ -304,11 +330,13 @@ bot.action("watch_ad", async (ctx) => {
 
 bot.action("claim_ad_reward", async (ctx) => {
   const telegramId = String(ctx.from.id);
-  if (userAdCooldown.has(telegramId)) {
-    return ctx.answerCbQuery("You’ve recently claimed this reward. Please wait.", { show_alert: true });
-  }
-
   try {
+    if (!(await checkChannelMembership(ctx))) {
+        return ctx.answerCbQuery("Please rejoin our channels to claim rewards.", { show_alert: true });
+    }
+    if (userAdCooldown.has(telegramId)) {
+        return ctx.answerCbQuery("You’ve recently claimed this reward. Please wait.", { show_alert: true });
+    }
     const row = await getUserRow(telegramId);
     if (row) {
       await updateUserField(telegramId, {
@@ -328,19 +356,18 @@ bot.action("claim_ad_reward", async (ctx) => {
 });
 
 bot.action("read_article", async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.reply("⏳ Generating your unique session code...");
-
   try {
+    if (!(await checkChannelMembership(ctx))) {
+        return ctx.answerCbQuery("Please rejoin our channels to read an article.", { show_alert: true });
+    }
+    await ctx.answerCbQuery();
+    await ctx.reply("⏳ Generating your unique session code...");
     const telegramId = String(ctx.from.id);
     const row = await getUserRow(telegramId);
     if (row) {
       const sessionCode = generateSessionCode();
-      await updateUserField(telegramId, {
-        article_session_id: sessionCode
-      });
+      await updateUserField(telegramId, { article_session_id: sessionCode });
       const articleLink = `${ARTICLE_URL}?session=${sessionCode}`;
-
       await ctx.replyWithHTML(
         `<b>Steps:</b>\n\n1. Click to open the article below.\n2. Read it for 2 minutes.\n3. Copy the session ID shown at the bottom.\n4. Paste it here to earn +100 CNFC Points.`,
         Markup.inlineKeyboard([[Markup.button.url("📰 Read Article", articleLink)]])
@@ -356,15 +383,11 @@ bot.action("read_article", async (ctx) => {
 
 // --- 7. Webhook & Server Setup ---
 const app = express();
-
-// Logging middleware
 app.use((req, res, next) => {
   console.log(`📩 ${req.method} ${req.url}`);
   next();
 });
-
 app.use(bot.webhookCallback(SECRET_PATH));
-
 app.get('/', (req, res) => {
   res.send("🤖 CNFC Telegram Bot is running!");
 });
@@ -376,7 +399,6 @@ app.listen(PORT, async () => {
     await bot.telegram.setWebhook(fullWebhookURL);
     const info = await bot.telegram.getWebhookInfo();
     console.log("✅ Webhook set to:", info.url);
-    console.log("Webhook Info:", info);
     console.log(`🚀 Server ready at ${WEBHOOK_URL} on port ${PORT}`);
   } catch (err) {
     console.error("❌ Failed to set webhook:", err.message);
