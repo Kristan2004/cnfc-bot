@@ -7,8 +7,6 @@ const { Pool } = require('pg');
 // --- 1. Initialize Postgres Connection ---
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // If Render requires it, you can enable SSL like below. Adjust depending on your environment:
-  // ssl: { rejectUnauthorized: false },
 });
 
 // --- 2. Constants ---
@@ -21,16 +19,22 @@ const AD_URL = "https://otieu.com/4/9649985";
 const WEBHOOK_URL = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
 const SECRET_PATH = "/telegraf/chainfabric_secret";
 const REQUIRED_CHANNELS = [
-    { id: process.env.CHANNEL_ID_1, username: CHANNEL_USERNAME },
-    { id: process.env.CHANNEL_ID_2, username: CHANNEL_USERNAME2 }
+  { id: process.env.CHANNEL_ID_1, username: CHANNEL_USERNAME },
+  { id: process.env.CHANNEL_ID_2, username: CHANNEL_USERNAME2 }
 ];
-
 
 // --- 3. Bot Init ---
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 // --- 4. Utility Functions ---
-const generateReferralCode = (count) => "USER" + String(count + 1).padStart(3, "0");
+function generateReferralCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const nums = '0123456789';
+  let code = '';
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < 4; i++) code += nums[Math.floor(Math.random() * nums.length)];
+  return code;
+}
 
 function generateSessionCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -44,37 +48,39 @@ function generateSessionCode() {
 }
 
 async function getUserRow(telegramId) {
-  const res = await pool.query(
-    `SELECT * FROM users WHERE telegram_id = $1`,
-    [String(telegramId)]
-  );
+  const res = await pool.query(`SELECT * FROM users WHERE telegram_id = $1`, [String(telegramId)]);
   return res.rows[0];
 }
 
 async function createUserWithReferral(client, { telegramId, name, username, refCode }) {
-  const countRes = await client.query(`SELECT COUNT(*) FROM users`);
-  const newReferralCode = "USER" + String(parseInt(countRes.rows[0].count, 10) + 1).padStart(3, "0");
+  let newReferralCode;
+  while (true) {
+    const tempCode = generateReferralCode();
+    const existing = await client.query(`SELECT 1 FROM users WHERE referral_code = $1`, [tempCode]);
+    if (existing.rowCount === 0) {
+      newReferralCode = tempCode;
+      break;
+    }
+  }
+
   let referredBy = '';
   if (refCode) {
     const referrer = (await client.query(`SELECT * FROM users WHERE referral_code = $1`, [refCode])).rows[0];
     if (referrer) {
       referredBy = refCode;
       await client.query(
-        `UPDATE users
-         SET referrals = referrals + 1,
-             balance = balance + 1000
-         WHERE referral_code = $1`,
+        `UPDATE users SET referrals = referrals + 1, balance = balance + 1000 WHERE referral_code = $1`,
         [refCode]
       );
     }
   }
+
   await client.query(
-    `INSERT INTO users (
-       telegram_id, name, username, joined_at, referral_code,
-       referred_by, referrals, balance, task_status
-     ) VALUES ($1,$2,$3,$4,$5,$6,0,0,'start')`,
+    `INSERT INTO users (telegram_id, name, username, joined_at, referral_code, referred_by, referrals, balance, task_status)
+     VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 'start')`,
     [String(telegramId), name, username, new Date().toISOString(), newReferralCode, referredBy]
   );
+
   const userRow = (await client.query(`SELECT * FROM users WHERE telegram_id = $1`, [String(telegramId)])).rows[0];
   return userRow;
 }
@@ -88,29 +94,27 @@ async function updateUserField(telegramId, fields) {
   await pool.query(sql, values);
 }
 
-// ✅ NEW: Reusable function to check channel membership
 async function checkChannelMembership(ctx) {
-    let notJoined = [];
-    for (const channel of REQUIRED_CHANNELS) {
-        if (!channel.id) continue; // Skip if channel ID is not set in .env
-        try {
-            const member = await ctx.telegram.getChatMember(channel.id, ctx.from.id);
-            if (!['member', 'administrator', 'creator'].includes(member.status)) {
-                notJoined.push(`@${channel.username}`);
-            }
-        } catch (e) {
-            console.error(`Error checking membership for user ${ctx.from.id} in channel ${channel.id}:`, e.message);
-            notJoined.push(`@${channel.username}`); // Assume not joined if there's an API error
-        }
+  let notJoined = [];
+  for (const channel of REQUIRED_CHANNELS) {
+    if (!channel.id) continue;
+    try {
+      const member = await ctx.telegram.getChatMember(channel.id, ctx.from.id);
+      if (!['member', 'administrator', 'creator'].includes(member.status)) {
+        notJoined.push(`@${channel.username}`);
+      }
+    } catch (e) {
+      console.error(`Error checking membership for user ${ctx.from.id} in channel ${channel.id}:`, e.message);
+      notJoined.push(`@${channel.username}`);
     }
+  }
 
-    if (notJoined.length > 0) {
-        await ctx.reply(`You must be a member of all required channels to use the bot. Please rejoin: ${notJoined.join(', ')}`);
-        return false; // User is not a member
-    }
-    return true; // User is a member of all channels
+  if (notJoined.length > 0) {
+    await ctx.reply(`You must be a member of all required channels to use the bot. Please rejoin: ${notJoined.join(', ')}`);
+    return false;
+  }
+  return true;
 }
-
 
 // --- 5. Bot Logic ---
 const userAdCooldown = new Set();
@@ -166,7 +170,7 @@ bot.start(async (ctx) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    let userRow = (await client.query(`SELECT * FROM users WHERE telegram_id = $1`, [telegramId])).rows[0];
+    let userRow = await getUserRow(telegramId);
     if (!userRow) {
       userRow = await createUserWithReferral(client, { telegramId, name, username, refCode });
     }
@@ -184,8 +188,7 @@ bot.start(async (ctx) => {
 bot.command('balance', async (ctx) => {
   try {
     if (!(await checkChannelMembership(ctx))) return;
-    const telegramId = String(ctx.from.id);
-    const userRow = await getUserRow(telegramId);
+    const userRow = await getUserRow(String(ctx.from.id));
     if (userRow) {
       await sendProfile(ctx, userRow);
     } else {
@@ -205,18 +208,17 @@ bot.action("verify_telegram", async (ctx) => {
 
     let userRow = await getUserRow(telegramId);
     if (!userRow) {
-        // Fallback for safety, though /start should handle this.
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
-            userRow = await createUserWithReferral(client, { telegramId, name: ctx.from.first_name || "", username: ctx.from.username || "", refCode: "" });
-            await client.query('COMMIT');
-        } catch(e) {
-            await client.query('ROLLBACK');
-            throw e;
-        } finally {
-            client.release();
-        }
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        userRow = await createUserWithReferral(client, { telegramId, name: ctx.from.first_name || "", username: ctx.from.username || "", refCode: "" });
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
     }
 
     if (userRow.task_status !== "start") {
@@ -236,7 +238,6 @@ bot.action("verify_telegram", async (ctx) => {
   }
 });
 
-
 bot.on("text", async (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
   try {
@@ -253,12 +254,11 @@ bot.on("text", async (ctx) => {
       });
       await ctx.reply("✅ Success! You've earned +100 CNFC Points. Click /balance or Refresh to see your updated balance.");
     } else if (row.task_status === "telegram_done") {
-      // ✅ NEW: Check if Instagram username already exists
       const existingUser = (await pool.query(`SELECT * FROM users WHERE instagram_username = $1`, [text])).rows[0];
       if (existingUser) {
         return ctx.reply("This Instagram username has already been registered. Please enter a different one.");
       }
-      
+
       await updateUserField(telegramId, {
         instagram_username: text,
         task_status: "instagram_done",
@@ -296,11 +296,8 @@ bot.on("photo", async (ctx) => {
 
 bot.action("refresh_profile", async (ctx) => {
   try {
-    if (!(await checkChannelMembership(ctx))) {
-        return ctx.answerCbQuery("Please rejoin our channels to refresh your profile.", { show_alert: true });
-    }
-    const telegramId = String(ctx.from.id);
-    const row = await getUserRow(telegramId);
+    if (!(await checkChannelMembership(ctx))) return ctx.answerCbQuery("Please rejoin our channels to refresh your profile.", { show_alert: true });
+    const row = await getUserRow(String(ctx.from.id));
     if (!row) return ctx.answerCbQuery("❌ You need to /start first.", { show_alert: true });
     await sendProfile(ctx, row);
     await ctx.answerCbQuery();
@@ -313,13 +310,10 @@ bot.action("refresh_profile", async (ctx) => {
 });
 
 bot.action("watch_ad", async (ctx) => {
-  if (!(await checkChannelMembership(ctx))) {
-      return ctx.answerCbQuery("Please rejoin our channels to watch an ad.", { show_alert: true });
-  }
+  if (!(await checkChannelMembership(ctx))) return ctx.answerCbQuery("Please rejoin our channels to watch an ad.", { show_alert: true });
   const telegramId = String(ctx.from.id);
-  if (userAdCooldown.has(telegramId)) {
-    return ctx.answerCbQuery("Please wait at least 1 minute before watching another ad.", { show_alert: true });
-  }
+  if (userAdCooldown.has(telegramId)) return ctx.answerCbQuery("Please wait at least 1 minute before watching another ad.", { show_alert: true });
+
   await ctx.answerCbQuery();
   await ctx.reply("⚠️ <b>Disclaimer:</b> We are not responsible for ad content. Avoid clicking suspicious links.", { parse_mode: "HTML" });
   await ctx.reply("Watch this ad for 1 minute, then click the confirmation button.", Markup.inlineKeyboard([
@@ -331,17 +325,12 @@ bot.action("watch_ad", async (ctx) => {
 bot.action("claim_ad_reward", async (ctx) => {
   const telegramId = String(ctx.from.id);
   try {
-    if (!(await checkChannelMembership(ctx))) {
-        return ctx.answerCbQuery("Please rejoin our channels to claim rewards.", { show_alert: true });
-    }
-    if (userAdCooldown.has(telegramId)) {
-        return ctx.answerCbQuery("You’ve recently claimed this reward. Please wait.", { show_alert: true });
-    }
+    if (!(await checkChannelMembership(ctx))) return ctx.answerCbQuery("Please rejoin our channels to claim rewards.", { show_alert: true });
+    if (userAdCooldown.has(telegramId)) return ctx.answerCbQuery("You’ve recently claimed this reward. Please wait.", { show_alert: true });
+
     const row = await getUserRow(telegramId);
     if (row) {
-      await updateUserField(telegramId, {
-        balance: (parseInt(row.balance || 0, 10) + 30)
-      });
+      await updateUserField(telegramId, { balance: (parseInt(row.balance || 0, 10) + 30) });
       userAdCooldown.add(telegramId);
       setTimeout(() => userAdCooldown.delete(telegramId), 60000);
       await ctx.editMessageText("✅ Thanks for watching! You've earned +30 CNFC Points. Click /balance or Refresh to see your updated balance.");
@@ -357,11 +346,8 @@ bot.action("claim_ad_reward", async (ctx) => {
 
 bot.action("read_article", async (ctx) => {
   try {
-    if (!(await checkChannelMembership(ctx))) {
-        return ctx.answerCbQuery("Please rejoin our channels to read an article.", { show_alert: true });
-    }
+    if (!(await checkChannelMembership(ctx))) return ctx.answerCbQuery("Please rejoin our channels to read an article.", { show_alert: true });
     await ctx.answerCbQuery();
-    await ctx.reply("⏳ Generating your unique session code...");
     const telegramId = String(ctx.from.id);
     const row = await getUserRow(telegramId);
     if (row) {
